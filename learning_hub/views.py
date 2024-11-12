@@ -4,39 +4,55 @@ from .models.userModels import User, UserModel
 from .models.courseModels import CourseModel, Courses
 from datetime import datetime, timedelta
 from bson import ObjectId
+from PIL import Image
+from io import BytesIO
 import json
 import jwt
+import base64
 
 
 @csrf_exempt
 def Signup(request):
     if request.method == "POST":
         try:
-            data = json.loads(request.body)
+            data = request.POST
             username = data.get("username")
             email = data.get("email")
             role = data.get("role")
+            profileImg = request.FILES.get("profileImg")
             password = data.get("password")
 
             if not username or not email or not password or not role:
                 return JsonResponse({"error": "All Fields are required"}, status=401)
+            encoded_img = ""
+            if profileImg:
+                img = Image.open(profileImg)
+                max_size = (800, 800)
+                img.thumbnail(max_size, Image.Resampling.LANCZOS)
+                buffered_img = BytesIO()
+                img.save(buffered_img, format="PNG")
+                buffered_img.seek(0)
+                encoded_img = base64.b64encode(buffered_img.read()).decode("utf-8")
 
             check_user = User.find_one({"email": email})
             if check_user:
                 return JsonResponse({"error": "Email already exists"}, status=401)
 
-            new_user = UserModel(username, email, password, role)
+            new_user = UserModel(username, email, password, role, encoded_img)
             User.insert_one(new_user.__dict__)
+            user_data = {
+                "id": str(new_user._id),
+                "username": new_user.username,
+                "email": new_user.email,
+                "role": new_user.role,
+                "profileImg": encoded_img,
+                "created_at": new_user.created_at,
+                "updated_at": new_user.updated_at,
+            }
             return JsonResponse(
                 {
                     "message": "User Created Successfully",
-                    "user": {
-                        "username": new_user.username,
-                        "email": new_user.email,
-                        "role": new_user.role,
-                        "created_at": new_user.created_at,
-                        "updated_at": new_user.updated_at,
-                    },
+                    "user": user_data,
                 },
                 status=200,
             )
@@ -70,10 +86,19 @@ def Login(request):
                 "id": str(user_exist["_id"]),
                 "username": user_exist["username"],
                 "email": user_exist["email"],
-                "role": user_exist["role"],
-                "courses": [str(ObjectId) for ObjectId in user_exist["courses"]],
+                "role": user_exist.get("role"),  # Safe access with .get()
+                "courses": [
+                    str(ObjectId) for ObjectId in user_exist.get("courses", [])
+                ],
                 "access_token": access_token,
             }
+
+            if user_info.get("role") == "student":
+                enrolled_courses = user_exist.get("enrolled_courses", [])
+                print("Enrolled Courses:", enrolled_courses)
+            else:
+                print("Error: 'role' is not 'student' or missing")
+
             return JsonResponse(
                 {"message": "Login Successfully", "user": user_info}, status=200
             )
@@ -387,6 +412,7 @@ def Get_course_by_user(request, userId):
                         "title": course["title"],
                         "desc": course["desc"],
                         "modules": course["modules"],
+                        "reviews": course["reviews"],
                         "status": course["status"],
                     }
                 )
@@ -407,11 +433,35 @@ def Get_course_by_id(request, courseId):
                         "title": course["title"],
                         "desc": course["desc"],
                         "modules": course["modules"],
+                        "reviews": course["reviews"],
                         "status": course["status"],
                     },
                     status=200,
                 )
             return JsonResponse({"error": "Course not found"}, status=404)
+        except Exception as e:
+            return JsonResponse({"error": str(e)}, status=500)
+    return HttpResponse("<p>Invalid request method</p>")
+
+
+@token_required
+def get_user_by_id(request):
+    if request.method == "GET":
+        try:
+            user_id = request.headers.get("userId")
+            user = User.find_one({"_id": ObjectId(user_id)})
+            if user:
+                return JsonResponse(
+                    {
+                        "id": str(user["_id"]),
+                        "name": user["username"],
+                        "email": user["email"],
+                        "role": user["role"],
+                        "profileImg": user["profileImg"],
+                    },
+                    status=200,
+                )
+            return JsonResponse({"error": "User not found"}, status=404)
         except Exception as e:
             return JsonResponse({"error": str(e)}, status=500)
     return HttpResponse("<p>Invalid request method</p>")

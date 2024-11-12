@@ -16,4 +16,5 @@ urlpatterns = [
     path("delete-module/<moduleId>", Delete_module, name="deletemodule"),
     path("get-course-by-id/<courseId>", Get_course_by_id, name="getcoursebyid"),
     path("get-courses-by-userId/<userId>", Get_course_by_user, name="getcoursebyuserid"),
+    path("get-user-by-id/", get_user_by_id, name="getuserbyid"),
 ]
